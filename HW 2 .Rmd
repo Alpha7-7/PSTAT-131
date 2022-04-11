@@ -4,27 +4,28 @@ author: "Alec Chen"
 date: "4/10/2022"
 output: html_document
 ---
-
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warning = FALSE)
 ```
-
 ##Linear Regression
 Question 1:
-Form the following barplot shows the age distribution of the abalone with the most amounts of males followed by infant and females. 
+Form the following barplot shows the age distribution of the abalone with the most amounts of them fall in the age range of 8.5 to 12.5 years old. 
 ```{r, eval=FALSE}
 library(tidyverse)
 library(tidymodels)
-
+library(corrplot)
+library(ggplot2)
+abalone['Age'] <- abalone$Rings+1.5
+names(abalone) <- c('Type','LongestShell','Diameter','Height','WholeWeight','ShuckedWeight','VisceraWeight','ShellWeight','Rings','Age')
 abalone
 
-counts <- table(abalone$age)
-barplot(sort(counts,decreasing = TRUE), main="Distribution of Age", 
-   xlab="Age", ylab="Counts")
+counts <- table(abalone$Age)
+barplot(counts, main="Distribution of Age", 
+  xlab="Age", ylab="Counts")
 ```
 
 Question 2:
-
 ```{r}
 abalone %>% 
   select(is.numeric) %>% 
@@ -32,30 +33,56 @@ abalone %>%
   corrplot(type = 'lower', diag = FALSE, 
            method = 'color')
 
-set.seed(12345)
-abalone_train <- initial_split(abalone, prop = 0.80,
-                                strata = age)
+set.seed(1234)
+abalone_split <- initial_split(abalone, prop = 0.80,
+                                strata = Age)
+abalone_train <- training(abalone_split)
 abalone_test <- testing(abalone_split)
+
 ```
 
 
 Question 3:
+The reason why we should not include rings to predict age is we are trying to find other predictors that could predict abalone's age. Also, we create the age column based on the rings column. 
 ```{r}
-simple_abalone_recipe <-
-  recipe(age ~ ., data = abalone_train)
-simple_abalone_recipe
-
-abalone_recipe <- recipe(age ~ ., data = abalone_train) %>% 
-  step_dummy(all_nominal_predictors())
-
+abalone_recipe <- recipe(Age ~Type+LongestShell+Diameter+Height+WholeWeight+ShuckedWeight+ShellWeight+VisceraWeight, data = abalone_train) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact(terms = ~ type:ShuckedWeight) %>%
+  step_interact(terms = ~ LongestShell:Diameter) %>%
+  step_interact(terms = ~ ShuckedWeight:ShellWeight) %>%
+  step_normalize(LongestShell, Diameter, Height, WholeWeight, ShuckedWeight, VisceraWeight, ShellWeight)
 ```
 
 
 Question 4:
+```{r}
+lm_model <- linear_reg() %>% 
+  set_engine("lm")
+```
 
 Question 5:
+```{r}
+lm_wflow <- workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(abalone_recipe)
+lm_fit <- fit(lm_wflow, abalone_train)
+```
 
 
 Question 6:
+```{r}
+hypo_female <- data.frame(LongestShell = 0.50, Diameter = 0.10, Height = 0.30, WholeWeight = 4, ShuckedWeight = 1, VisceraWeight = 2, ShellWeight = 1, Type = 'F')
+predict(lm_fit, new_data = hypo_female)
+```
 
+Question 7:
+The R^2 value tells us that  the proportion of the variance for a dependent variable that's explained by an independent variable or variables in a regression model.We get the value of R^2 is 0.55, which explains the 55% of the age can be explained by this linear regression model. 
+```{r}
+library(yardstick)
+abalone_train_res <- predict(lm_fit, new_data = abalone_train %>% select(-Age))
+abalone_train_res <- bind_cols(abalone_train_res, abalone_train %>% select(Age))
+abalone_metrics <- metric_set(rmse, rsq, mae)
+abalone_metrics(abalone_train_res, truth = Age,
+estimate = .pred)
+```
 
