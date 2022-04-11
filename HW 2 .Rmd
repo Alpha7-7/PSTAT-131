@@ -1,0 +1,61 @@
+---
+title: "HW 2"
+author: "Alec Chen"
+date: "4/10/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Linear Regression
+Question 1:
+Form the following barplot shows the age distribution of the abalone with the most amounts of males followed by infant and females. 
+```{r, eval=FALSE}
+library(tidyverse)
+library(tidymodels)
+
+abalone
+
+counts <- table(abalone$age)
+barplot(sort(counts,decreasing = TRUE), main="Distribution of Age", 
+   xlab="Age", ylab="Counts")
+```
+
+Question 2:
+
+```{r}
+abalone %>% 
+  select(is.numeric) %>% 
+  cor() %>% 
+  corrplot(type = 'lower', diag = FALSE, 
+           method = 'color')
+
+set.seed(12345)
+abalone_train <- initial_split(abalone, prop = 0.80,
+                                strata = age)
+abalone_test <- testing(abalone_split)
+```
+
+
+Question 3:
+```{r}
+simple_abalone_recipe <-
+  recipe(age ~ ., data = abalone_train)
+simple_abalone_recipe
+
+abalone_recipe <- recipe(age ~ ., data = abalone_train) %>% 
+  step_dummy(all_nominal_predictors())
+
+```
+
+
+Question 4:
+
+Question 5:
+
+
+Question 6:
+
+
