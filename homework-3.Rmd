@@ -1,0 +1,223 @@
+---
+title: "Homework 3"
+author: "PSTAT 131/231"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    code_folding: show
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warning = FALSE)
+```
+
+## Classification
+
+For this assignment, we will be working with part of a [Kaggle data set](https://www.kaggle.com/c/titanic/overview) that was the subject of a machine learning competition and is often used for practicing ML models. The goal is classification; specifically, to predict which passengers would survive the [Titanic shipwreck](https://en.wikipedia.org/wiki/Titanic).
+
+![Fig. 1: RMS Titanic departing Southampton on April 10, 1912.](images/RMS_Titanic.jpg){width="363"}
+
+Load the data from `data/titanic.csv` into *R* and familiarize yourself with the variables it contains using the codebook (`data/titanic_codebook.txt`).
+
+Notice that `survived` and `pclass` should be changed to factors. When changing `survived` to a factor, you may want to reorder the factor so that *"Yes"* is the first level.
+
+Make sure you load the `tidyverse` and `tidymodels`!
+
+*Remember that you'll need to set a seed at the beginning of the document to reproduce your results.*
+
+### Question 1
+
+Split the data, stratifying on the outcome variable, `survived.`  You should choose the proportions to split the data into. Verify that the training and testing data sets have the appropriate number of observations. Take a look at the training data and note any potential issues, such as missing data.
+
+Why is it a good idea to use stratified sampling for this data
+Stratified sampling enables us to obtain a sample population that best represents the entire population. As we take a look at the training data set that there are some missing values.
+```{r, eval=FALSE}
+library(tidymodels)
+library(ISLR) # For the Smarket data set
+library(ISLR2) # For the Bikeshare data set
+library(discrim)
+library(poissonreg)
+library(corrr)
+library(klaR) # for naive bayes
+tidymodels_prefer()
+library(ggplot2)
+titanic$survived <- factor(titanic$survived)
+titanic$pclass <- factor(titanic$pclass)
+
+set.seed(1234)
+titanic_split <- initial_split(titanic, prop = 0.80,
+                                strata = survived)
+titanic_train <- training(titanic_split)
+titanic_test <- testing(titanic_split)
+titanic_train
+```
+
+### Question 2
+
+Using the **training** data set, explore/describe the distribution of the outcome variable `survived`.
+Based on the stratified data set we can see that there are more counts of people that are not survived than the ones who did survive. 
+```{r}
+counts <- table(titanic_train$survived)
+barplot(counts, main="Distribution of survived", 
+  xlab="survived", ylab="Counts")
+```
+
+
+### Question 3
+
+Using the **training** data set, create a correlation matrix of all continuous variables. Create a visualization of the matrix, and describe any patterns you see. Are any predictors correlated with each other? Which ones, and in which direction?
+```{r}
+cor_titanic <- titanic_train %>%
+  select(is.numeric) %>%
+  correlate()
+rplot(cor_titanic)
+correlation %>%
+  stretch() %>%
+  ggplot(aes(x, y, fill = r)) +
+  geom_tile() +
+  geom_text(aes(label = as.character(fashion(r))))
+```
+
+
+### Question 4
+
+Using the **training** data, create a recipe predicting the outcome variable `survived`. Include the following predictors: ticket class, sex, age, number of siblings or spouses aboard, number of parents or children aboard, and passenger fare.
+
+Recall that there were missing values for `age`. To deal with this, add an imputation step using `step_impute_linear()`. Next, use `step_dummy()` to **dummy** encode categorical predictors. Finally, include interactions between:
+
+-   Sex and passenger fare, and
+-   Age and passenger fare.
+
+You'll need to investigate the `tidymodels` documentation to find the appropriate step functions to use.
+```{r}
+titanic_recipe <- recipe(survived ~pclass+sex+age+sib_sp+parch+fare, data = titanic_train) %>% 
+  step_impute_linear(age, impute_with =  imp_vars(all_predictors())) %>%
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact(terms = ~ sex:fare) %>%
+  step_interact(terms = ~ age:fare) 
+```
+
+
+### Question 5
+
+Specify a **logistic regression** model for classification using the `"glm"` engine. Then create a workflow. Add your model and the appropriate recipe. Finally, use `fit()` to apply your workflow to the **training** data.
+
+***Hint: Make sure to store the results of `fit()`. You'll need them later on.***
+```{r}
+log_reg <- logistic_reg() %>% 
+  set_engine("glm") %>% 
+  set_mode("classification")
+log_wkflow <- workflow() %>% 
+  add_model(log_reg) %>% 
+  add_recipe(titanic_recipe)
+log_fit <- fit(log_wkflow, titanic_train)
+```
+
+### Question 6
+
+**Repeat Question 5**, but this time specify a linear discriminant analysis model for classification using the `"MASS"` engine.
+```{r}
+ldam_mass <- discrim_linear() %>% 
+  set_engine("MASS") %>% 
+  set_mode("classification")
+ldam_wkflow <- workflow() %>% 
+  add_model(ldam_mass) %>% 
+  add_recipe(titanic_recipe)
+ldam_fit <- fit(ldam_wkflow, titanic_train)
+```
+
+### Question 7
+
+**Repeat Question 5**, but this time specify a quadratic discriminant analysis model for classification using the `"MASS"` engine.
+```{r}
+qdam_mass <- discrim_quad() %>% 
+  set_engine("MASS") %>% 
+  set_mode("classification")
+ldam_wkflow <- workflow() %>% 
+  add_model(qdam_mass) %>% 
+  add_recipe(titanic_recipe)
+qdam_fit <- fit(ldam_wkflow, titanic_train)
+```
+### Question 8
+
+**Repeat Question 5**, but this time specify a naive Bayes model for classification using the `"klaR"` engine. Set the `usekernel` argument to `FALSE`.
+```{r}
+nbm <- naive_Bayes() %>% 
+  set_engine("klaR") %>%
+  set_mode("classification")%>%
+  set_args(usekernel = FALSE)
+nbm_workflow <- workflow()%>% 
+  add_model(nbm) %>% 
+  add_recipe(titanic_recipe)
+nb_fit <- fit(nbm_workflow, titanic_train)
+```
+### Question 9
+
+Now you've fit four different models to your training data.
+
+Use `predict()` and `bind_cols()` to generate predictions using each of these 4 models and your **training** data. Then use the *accuracy* metric to assess the performance of each of the four models.
+
+Which model achieved the highest accuracy on the training data?
+QDA has the highest accuracy on the training data. 
+```{r}
+# Assessing the performance of the four models and combine them into one dataset 
+model1 = predict(log_fit, new_data = titanic_train, type = "prob")
+model2 = predict(ldam_fit, new_data = titanic_train, type = "prob")
+model3 = predict(qdam_fit, new_data = titanic_train, type = "prob")
+model4 = predict(nb_fit, new_data = titanic_train, type = "prob")
+combined_model = bind_cols(model1,model2,model3,model4)
+combined
+
+model1_acc <- augment(log_fit, new_data = titanic_train) %>%
+  accuracy(truth = survived, estimate = .pred_class)
+model2_acc <- augment(ldam_fit, new_data = titanic_train) %>%
+  accuracy(truth = survived, estimate = .pred_class)
+model3_acc <- augment(qdam_fit, new_data = titanic_train) %>%
+  accuracy(truth = survived, estimate = .pred_class)
+model4_acc <- augment(nb_fit, new_data = titanic_train) %>%
+  accuracy(truth = survived, estimate = .pred_class)
+
+acc_models <- c(model1_acc$.estimate, model2_acc$.estimate, model3_acc$.estimate, model4_acc$.estimate)
+# From Lab 3 
+models <- c("Logistic Regression", "LDA", "QDA", "Naive Bayes")
+results <- tibble(accuracy_models = acc_models, models = models)
+results %>% 
+  arrange(-accuracy_models)
+```
+### Question 10
+
+Fit the model with the highest training accuracy to the **testing** data. Report the accuracy of the model on the **testing** data.
+
+Again using the **testing** data, create a confusion matrix and visualize it. Plot an ROC curve and calculate the area under it (AUC).
+
+How did the model perform? Compare its training and testing accuracies. If the values differ, why do you think this is so?
+The QDA model works well in the testing set as well that it generates a high accuracy of 0.8268156, meanwhile the training set with the accuracy of 0.8132022. It issurprising that the testing set has a higher accuracy than the training set the possible explanation for it is that there could be some data has been seen in the training step within the testing set or it could be overfitting. The ROC curve is to the upper left corner which indicates that the model has a high overall accuracy. 
+```{r}
+#QDA has the highest accuracy with the 0.8132022, therefore, we select it and put it in testing 
+new_qda <- discrim_quad() %>%
+  set_engine("MASS") %>%
+  set_mode("classification") 
+
+new_qda_workflow <- workflow()%>% 
+  add_model(new_qdam) %>% 
+  add_recipe(titanic_recipe)
+new_qda_fit <- fit(new_qda_workflow, titanic_test)
+
+new_qda_accuracy <- augment(new_qda_fit, new_data = titanic_test) %>%
+  accuracy(truth = survived, estimate = .pred_class)
+new_qda_accuracy
+
+augment(new_qda_fit, new_data = titanic_test) %>%
+  conf_mat(truth = survived, estimate = .pred_class) %>%
+  autoplot(type = "heatmap")
+
+augment(new_qda_fit, new_data = titanic_test) %>%
+  roc_curve(survived, .pred_No) %>%
+  autoplot()
+
+auc(titanic_test$survived, titanic_test$fare)
+```
