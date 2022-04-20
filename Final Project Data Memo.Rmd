@@ -1,0 +1,80 @@
+---
+title: "FinaL Project Memo"
+author: "Alec Chen"
+date: "4/12/2022"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warning = FALSE)
+```
+
+## Data Collection
+- An overview of your dataset
+I will be using my spotify chill playist as a training data to categorize  songs whether it falls into the liked songs. I will be using spotifyr package as a r documnetation API to access my spotify to extract data from it. 
+```{r}
+library('spotifyr')
+```
+
+```{r}
+Sys.setenv(SPOTIFY_CLIENT_ID = 'b0d6b66dcbd249feb7d79aec7c730cef')
+Sys.setenv(SPOTIFY_CLIENT_SECRET = 'a2bb822c93b24a9eb57a52eb85fba836')
+
+access_token <- get_spotify_access_token()
+```
+There are 343 observations and 13 predictors. I will be working with categorical variables to categorize whether the song fall into the liked songs. Since the chill playlist was added by me manually, there would be no missing values. However, if there are missing values then they would be dropped. 
+
+```{r}
+library(spotifyr)
+get_playlist_tracks("5eGadGC61gSTU9dtFrfl9b", fields = NULL,
+  limit = 100,
+  offset = 0,
+  market = NULL,
+  authorization = get_spotify_access_token(),
+  include_meta_info = FALSE
+)
+```
+
+```{r}
+get_playlist_audio_features(
+  11141344952,
+  "5eGadGC61gSTU9dtFrfl9b",
+  authorization = get_spotify_access_token()
+)
+```
+
+- An overview of your research question(s)
+What variable(s) are you interested in predicting? What question(s) are you interested in answering?
+I will be interested in what are the variables that really contribute to make the songs fall into the liked songs such as it could be the energy level is low, the speechiness is moderate, the danceability is low, etc. And, based on the features that I discoverd to classify testing dataset to categorize songs as whether they are chill or not. 
+
+Name your response/outcome variable(s) and briefly describe it/them.
+I will be adding a liked column to see whether or not this playlist songs will fallinto my liked playlist. 
+
+Will these questions be best answered with a classification or regression approach?
+This will fall into the classification approach. 
+
+Which predictors do you think will be especially useful?
+acousticness 
+danceability 
+duration_ms 
+energy 
+instrumentalness 
+key 
+liveness 
+loudness 
+mode 
+speechiness 
+tempo 
+time_signature 
+
+Is the goal of your model descriptive, predictive, inferential, or a combination? Explain.
+This model would be mostly inferential since it is focusing on what are the features that contribute to the songs that make them liked. But at the same time could be combination of predicitng what are the songs that would be liked. 
+
+- Your proposed project timeline
+By the end of week 3 I will be done cleaning and splitting dataset.
+Week 4 would be conducting exploratory data analysis and building the models with random forest, Nearest Neighbors, and Boosted trees. 
+Week 5 Run the analysis on the testing dataset. 
+Week 6 revision on the result and calibrate the training models. 

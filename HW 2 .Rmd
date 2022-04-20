@@ -2,7 +2,9 @@
 title: "HW 2"
 author: "Alec Chen"
 date: "4/10/2022"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE,
@@ -30,8 +32,7 @@ Question 2:
 abalone %>% 
   select(is.numeric) %>% 
   cor() %>% 
-  corrplot(type = 'lower', diag = FALSE, 
-           method = 'color')
+  corrplot(type = 'lower', diag = FALSE, method = 'color')
 
 set.seed(1234)
 abalone_split <- initial_split(abalone, prop = 0.80,
