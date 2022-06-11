@@ -1,0 +1,447 @@
+---
+title: "PSTAT 131 Final Project"
+author: "Alec Chen"
+date: '2022-06-09'
+output:  
+  html_document: 
+    toc: true
+  pdf_document: 
+    toc: true
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warning = FALSE)
+```
+
+# Introduction 
+I am interested in exploring what makes a song popular or not and what predictors contribute the most with EDA and thus based on that create 4 different machine learning models to predict songs' popularity. The data set consists of songs of different genres, artists, energy, liveliness, and other traits. Some of them top the chart list and become very popular and others are not so common among the crowd. I believe that each song has some unique combination of attributes that makes it popular. We are considering the data from Spotify, a popular application for listening to music. Each song has been rated on different factors in the data. With this analysis, a music company can predetermine how popular the song can come about to be. The model can also be used by companies like Spotify to predict the popularity of an upcoming song and thus suggest it to its user. To recommend new music to users, and to be able to internally classify songs, Spotify assigns each song value from 13 different features. These features are mostly numerical values but include some categorical data as well. Spotify also assigns each song a popularity score, based on the total number of clicks. 
+
+Data Collection: 
+I found this data set from Kaggle https://www.kaggle.com/datasets/zaheenhamidani/ultimate-spotify-tracks-db?resource=download which consists of the features of songs. There are 10,000 songs per genre. There are 26 genres so it is a total of 232,725 tracks. This size of data set could be too big and inefficient to run models, therefore, I have randomly stratified the data with a size of 5000 to make sure the data set is still able to represent large data set. 
+
+## Data Codebook
+Numerical: 
+-acousticness: A confidence measure from 0.0 to 1.0 of whether the track is acoustic. 1.0 represents high confidence the track is acoustic.
+-danceability: Danceability describes how suitable a track is for dancing based on a combination of musical elements including tempo, rhythm stability, beat strength, and overall  regularity. A value of 0.0 is least danceable and 1.0 is most danceable.
+-duration_ms: The duration of the track in milliseconds.
+-energy: Energy is a measure from 0.0 to 1.0 and represents a perceptual measure of intensity and activity.
+-liveliness: Detects the presence of an audience in the recording.
+-instrumentalness: Predicts whether a track contains no vocals.
+-loudness: The overall loudness of a track in decibels (dB)
+-speechiness: Speechiness detects the presence of spoken words in a track.
+-valence: A measure from 0.0 to 1.0 describing the musical positiveness conveyed by a track.
+-time_signature: An estimated time signature.
+-tempo: The overall estimated tempo of a track in beats per minute (BPM).
+Dummy Code: 
+-mode: 0 = Minor, 1 = Major
+
+# Data Preparation
+I loaded the necessary packages for later EDA and fit in linear regression, random forest, SVM for regression and boosted tree. 
+```{r}
+library(tidymodels)
+library(tidyverse)
+library(ISLR) 
+library(ISLR2) 
+library(discrim)
+library(poissonreg)
+library(corrr)
+library(ggplot2)
+library(corrplot)
+library(ggthemes)
+library(kernlab)
+library(e1071)
+library(caret)
+library(rpart)
+library(rpart.plot) 
+tidymodels_prefer()
+
+#Import the Data 
+spotify <-read_csv("Data/SpotifyFeatures.csv")
+spotify
+```
+
+# Exploratory Data Analysis
+
+## Data Cleaning
+We have 5,000 observations and 12 variables with two classes as numeric and integers dropping somer of the missing values rows and get a summary of the data set for better regression analysis. 
+```{r}
+# Data Set Summary
+str(spotify)
+colSums(is.na(spotify))
+spotify <- drop_na(spotify)
+summary(spotify)
+```
+With the unprocessed data set we need to rename some of the columns for better access, change the class of the explicit column from character to numeric and creates subset of data set for correlation matrics.   
+```{r}
+spotify<- spotify %>% select("danceability","energy","loudness","mode","speechiness",
+              "acousticness","instrumentalness","liveness","valence","tempo","duration_ms","popularity")
+spotify <- spotify %>% 
+  mutate(mode = as.numeric(case_when(
+    (mode == "Major") ~ "1",
+    (mode == "Minor")~ "0")))
+```
+## Data Pre-processing
+We splitting the data set into two, a training set and a testing set and also perform a cross-fold validation. 
+```{r}
+# Data Train-Test Split 
+set.seed(111)
+# Reduced data size for efficiency 
+spotify <- spotify[sample(1:nrow(spotify), 5000,
+   replace=FALSE),]
+# Split data set 80% training 20% testing
+spotify_split <- initial_split(spotify, prop = 0.80,
+                                strata = popularity)
+spotify_train <- training(spotify_split)
+spotify_test <- testing(spotify_split)
+# Cross fold validation with 10 folds 
+spotify_folds <- vfold_cv(spotify_train, v = 10)
+spotify_folds
+```
+With the correlation matrics of the features we find that most of the features have little or no correlation with one another beside the loudness and energy have a stronger positive correlation and acousticness and energy have a negative correlation. And, the histogram gives us the visualization of the popularity distribution within the data set. 
+With Principal Components Regression we are able to see the intercept term in the test RMSE is 18.11 if we add in the first principal component it drops to 17.14.We can see that adding additional principal components actually leads to an increase in test RMSE. Thus, it appears that it would be optimal to only use two principal components in the final model.For the variance explained by using just the first principal component, we can explain 31.84% of the variation in the response variable.by adding in the second principal component, we can explain 46.21% of the variation in the response variable.We can explain more variance by using more principal components. 
+
+```{r}
+#Correlation of the predictors 
+corrplot::corrplot(cor(spotify),  method = 'color') 
+# Data set song's popularity distribution 
+spotify %>% 
+  ggplot(aes(x = popularity)) +
+  geom_histogram(bins = 60) +
+  theme_bw()
+#PCR
+set.seed(111)
+#fit PCR model
+library(pls)
+PCR_model <- pcr(popularity~., data=spotify, scale=TRUE, validation="CV")
+summary(PCR_model)
+#visualize cross-validation plots
+validationplot(PCR_model)
+validationplot(PCR_model, val.type="MSEP")
+
+```
+# Model Building 
+## Linear Regression
+With the simple linear regression we can see that it predicts pretty poorly that the data points hardly follow a diagonal line. With the high of RMSE 15.68 and the low of rsq explaining 25% of the variance. 
+```{r}
+## Linear Regression 
+# Create a Recipe
+spotify_recipe <- recipe(popularity ~ ., data = spotify_train) %>% 
+  step_dummy(all_nominal_predictors())
+
+lm_model <- linear_reg() %>% 
+  set_engine("lm")
+lm_wflow <- workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(spotify_recipe)
+
+lm_fit <- fit(lm_wflow, spotify_train)
+lm_fit %>% 
+  # This returns the parsnip object:
+  extract_fit_parsnip() %>% 
+  # Now tidy the linear model object:
+  tidy()
+
+lm_fitt <- fit(lm_wflow, spotify_test)
+lm_fitt %>% 
+  # This returns the parsnip object:
+  extract_fit_parsnip() %>% 
+  # Now tidy the linear model object:
+  tidy()
+
+# Train Recipe 
+spotify_train_res <- predict(lm_fit, new_data = spotify_train %>% select(-popularity))
+spotify_train_res %>% 
+  head()
+# Test Recipe 
+spotify_train_res <- bind_cols(spotify_train_res, spotify_train %>% select(popularity))
+spotify_train_res %>% 
+  head()
+
+spotify_train_res %>% 
+  ggplot(aes(x = .pred, y = popularity)) +
+  geom_point(alpha = 0.2) +
+  geom_abline(lty = 2) + 
+  theme_bw() +
+  coord_obs_pred()
+
+rmse(spotify_train_res, truth = popularity, estimate = .pred)
+spotify_metrics <- metric_set(rmse, rsq, mae)
+spotify_metrics(spotify_train_res, truth = popularity, 
+                estimate = .pred)
+
+spotify_test_res <- predict(lm_fitt, new_data = spotify_test %>% select(-popularity))
+spotify_test_res %>% 
+  head()
+spotify_test_res <- bind_cols(spotify_test_res, spotify_test %>% select(popularity))
+spotify_test_res %>% 
+  head()
+
+spotify_test_res %>% 
+  ggplot(aes(x = .pred, y = popularity)) +
+  geom_point(alpha = 0.2) +
+  geom_abline(lty = 2) + 
+  theme_bw() +
+  coord_obs_pred()
+
+rmse(spotify_test_res, truth = popularity, estimate = .pred)
+spotify_metrics <- metric_set(rmse, rsq, mae)
+spotify_metrics(spotify_test_res, truth = popularity, 
+                estimate = .pred)
+```
+
+## Lasso Regresion
+To make sure that the linear regression might not be the best for predicting this data set, we use lasso regression to see if it provides a better prediction accuracy. In comparison with the simple linear regression we still see that it predicts pretty poorly with the  high of RMSE 15.76 and the low of rsq explaining 25% of the variance. 
+
+```{r}
+# Lasso Regression 
+lasso_recipe <- 
+  recipe(formula = popularity ~ ., data = spotify_train) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_novel(all_nominal_predictors()) %>% 
+  step_zv(all_predictors()) %>% 
+  step_normalize(all_predictors())
+
+lasso_spec <- 
+  linear_reg(penalty = tune(), mixture = 1) %>% 
+  set_mode("regression") %>% 
+  set_engine("glmnet") 
+
+lasso_workflow <- workflow() %>% 
+  add_recipe(lasso_recipe) %>% 
+  add_model(lasso_spec)
+penalty_grid <- grid_regular(penalty(range = c(-2, 2)), levels = 50)
+
+tune_res <- tune_grid(
+  lasso_workflow,
+  resamples = spotify_folds, 
+  grid = penalty_grid
+)
+autoplot(tune_res)
+collect_metrics(tune_res)
+best_penalty <- select_best(tune_res, metric = "rsq")
+best_penalty
+lasso_final <- finalize_workflow(lasso_workflow, best_penalty)
+
+lasso_final_fit <- fit(lasso_final, data = spotify_train)
+augment(lasso_final_fit, new_data = spotify_test) %>%
+  rmse(truth = popularity, estimate = .pred)
+augment(lasso_final_fit, new_data = spotify_test) %>%
+  rsq(truth = popularity, estimate = .pred)
+augment(lasso_final_fit, new_data = spotify_test) %>%
+  rmse(truth = popularity, estimate = .pred)
+```
+## SVM 
+With SVM models we start off with just fitting into radial model the RMSE was high as 15 and with the hyper parameters tuning of scaling and centering the rmse slighly decreases then with the cross validation has a more significant decreases on RMSE.  
+```{r}
+#SVM 
+#Preprocessing Model1 
+modelsvm = svm(spotify$popularity~.,spotify)
+set.seed(1)
+model1 <- train(
+  popularity~.,
+  data = spotify,
+  method = 'svmRadial'
+)
+model1
+#Preprocessing Model2
+set.seed(1)
+
+model2 <- train(
+  popularity~.,
+  data = spotify,
+  method = 'svmRadial',
+  preProcess = c("center", "scale")
+)
+model2
+# Splitting data 
+set.seed(1)
+
+inTraining <- createDataPartition(spotify$popularity, p = .80, list = FALSE)
+training <- spotify[inTraining,]
+testing  <- spotify[-inTraining,]
+set.seed(1)
+
+model3 <- train(
+  popularity ~ .,
+  data = training,
+  method = 'svmRadial',
+  preProcess = c("center", "scale")
+)
+model3
+
+# calculate the RMSE and r2 to compare to the model above.
+test.features = subset(testing, select=-c(popularity))
+test.target = subset(testing, select=popularity)[,1]
+
+predictions = predict(model3, newdata = test.features)
+
+# RMSE
+sqrt(mean((test.target - predictions)^2))
+# R2
+cor(test.target, predictions) ^ 2
+
+#Cross Validation
+set.seed(1)
+ctrl <- trainControl(
+  method = "cv",
+  number = 10,
+)
+
+set.seed(1)
+
+model4 <- train(
+ popularity ~ .,
+  data = training,
+  method = 'svmRadial',
+  preProcess = c("center", "scale"),
+  trCtrl = ctrl
+)
+model4
+
+# calculate the RMSE and r2 to compare to the model above.
+test.features = subset(testing, select=-c(popularity))
+test.target = subset(testing, select=popularity)[,1]
+
+predictions = predict(model4, newdata = test.features)
+
+# RMSE
+sqrt(mean((test.target - predictions)^2))
+# R2
+cor(test.target, predictions) ^ 2
+
+#Tuning Hyper Parameters
+set.seed(1)
+
+tuneGrid <- expand.grid(
+  C = c(0.25, .5, 1),
+  sigma = 0.1
+)
+
+model5 <- train(
+ popularity ~ .,
+  data = training,
+  method = 'svmRadial',
+  preProcess = c("center", "scale"),
+  trControl = ctrl,
+  tuneGrid = tuneGrid
+)
+model5
+plot(model5)
+```
+
+## Regression Tree 
+```{r}
+#M1 
+tree_ml1 <- rpart(popularity ~ ., 
+             method = "anova", data = spotify_train)
+tree_ml1
+rpart.plot(tree_ml1)
+plotcp(tree_ml1)
+
+
+#M2
+tree_ml2 <- rpart(
+    formula = popularity ~ .,
+    data    = spotify_train,
+    method  = "anova", 
+    control = list(cp = 0, xval = 10)
+)
+
+plotcp(tree_ml2)
+abline(v = 12, lty = "dashed")
+
+#M3
+m3 <- rpart(
+    formula = popularity ~ .,
+    data    = spotify_train,
+    method  = "anova", 
+    control = list(minsplit = 10, maxdepth = 12, xval = 10)
+)
+```
+
+```{r}
+tree_spec <- decision_tree() %>%
+  set_engine("rpart")
+reg_tree_spec <- tree_spec %>%
+  set_mode("regression")
+reg_tree_fit <- fit(reg_tree_spec, popularity ~ ., spotify_train)
+augment(reg_tree_fit, new_data = spotify_test) %>%
+  rmse(truth = popularity, estimate = .pred)
+reg_tree_fit %>%
+  extract_fit_engine() %>%
+  rpart.plot()
+
+reg_tree_wf <- workflow() %>%
+  add_model(reg_tree_spec %>% set_args(cost_complexity = tune())) %>%
+  add_formula(popularity ~ .)
+
+param_grid <- grid_regular(cost_complexity(range = c(-4, -1)), levels = 10)
+
+tune_res <- tune_grid(
+  reg_tree_wf, 
+  resamples = spotify_folds, 
+  grid = param_grid
+)
+autoplot(tune_res)
+
+best_complexity <- select_best(tune_res, metric = "rmse")
+
+reg_tree_final <- finalize_workflow(reg_tree_wf, best_complexity)
+
+reg_tree_final_fit <- fit(reg_tree_final, data = spotify_train)
+reg_tree_final_fit %>%
+  extract_fit_engine() %>%
+  rpart.plot()
+augment(reg_tree_final_fit, new_data = spotify_test) %>%
+  rmse(truth = popularity, estimate = .pred)
+```
+
+## Random Forest
+With boosted trees we can see that there are some predictors that weighted more than other predictors such as acousticness with high of importance of 15% incomparably with other predictors ranging 5-10%, which is inconsistent with what we have seen from the correlation matrix indicating that loudness is more correlated with popularity than other predictors. With the increase of tree depth doesnt help with the RMSE but it show the acousticness as taking more importnace in the prediction. 
+```{r}
+bagging_spec <- rand_forest(mtry = .cols()) %>%
+  set_engine("randomForest", importance = TRUE) %>%
+  set_mode("regression")
+bagging_fit <- fit(bagging_spec, popularity ~ ., 
+                   data = spotify_train)
+augment(bagging_fit, new_data = spotify_test) %>%
+  rmse(truth = popularity, estimate = .pred)
+augment(bagging_fit, new_data = spotify_test) %>%
+  ggplot(aes(popularity, .pred)) +
+  geom_abline() +
+  geom_point(alpha = 0.5)
+library(vip)
+vip(bagging_fit)
+
+rf_spec <- rand_forest(mtry = 6) %>%
+  set_engine("randomForest", importance = TRUE) %>%
+  set_mode("regression")
+rf_fit <- fit(rf_spec, popularity ~ ., data = spotify_train)
+augment(rf_fit, new_data = spotify_train) %>%
+  rmse(truth = popularity, estimate = .pred)
+augment(rf_fit, new_data = spotify_test) %>%
+  ggplot(aes(popularity, .pred)) +
+  geom_abline() +
+  geom_point(alpha = 0.5)
+vip(rf_fit)
+
+```
+## Boosted Trees
+With boosted trees we can see that there are some predictors that weighted more than other predictors such as acousticness with high of importance of 15% incomparably with other predictors ranging 5-10%, which is inconsistent with what we have seen from the correlation matrix indicating that loudness is more correlated with popularity than other predictors. With the increase of tree depth doesnt help with the RMSE but it show the acousticness as taking more importnace in the prediction. 
+```{r}
+# Boosted Trees
+boost_spec <- boost_tree(trees = 5000, tree_depth = 5) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+boost_fit <- fit(boost_spec, popularity ~ ., data = spotify_train)
+augment(boost_fit, new_data = spotify_test) %>%
+  rmse(truth = popularity, estimate = .pred)
+augment(boost_fit, new_data = spotify_test) %>%
+  ggplot(aes(popularity, .pred)) +
+  geom_abline() +
+  geom_point(alpha = 0.5)
+vip(boost_fit)
+```
+# Conclusion 
+Overall we have done linear regression, Ridge regression, Lasso regression, Random forest, SVM, and boosted tree all of them have the similar RMSE of around 16 on the testing set prediction beside the random forest has comparably the low of 6. Overall I am surprised by the high RMSE of the models that produce usually it would be best to be around 0.2 to 0.5. From the regression models fitting, we already see that the correlation among the predictors and the popularity are not linear thus they would have a poor prediction. High RMSE could be indicating the overfitting that it trains well with training set however does it poor prediction with the testing set. Usually Boosted trees should be performing better than random forest, however, the reason that the random forest performs better is because the overfitting of the boosted trees. 
+
